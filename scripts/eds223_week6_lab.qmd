@@ -1,0 +1,204 @@
+---
+title: "EDS 223 Week 6 Lab"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Load packages
+
+```{r}
+library(sf) # vector handling
+library(terra) # raster handling
+library(tidyverse)
+library(tmap) # map making
+library(spData) # spatial data
+library(spDataLarge) # spatial data
+```
+
+## Load data
+
+```{r}
+# load Zion park boundary (vector object to rasterize)
+boundary <- read_sf(system.file("vector/zion.gpkg", package = "spDataLarge")) 
+
+# load elevation raster to use as template raster object
+elevation <- rast(system.file("raster/srtm.tif", package = "spDataLarge"))
+
+# check and transform coordinate reference systems
+if(crs(elevation) == crs(boundary)) {
+  print("Coordinate reference systems match")
+} else{
+  warning("Updating coordinate reference systems to match")
+  # transform data to match
+  boundary <- st_transform(boundary, st_crs(elevation))
+}
+```
+
+#### Check geometry type of boundary 
+
+```{r}
+if(sf::st_geometry_type(boundary) == "POLYGON") {
+  print("polygon data") 
+} else{
+  print("not polygon data")
+}
+```
+
+#### Make the park boundary a line vector class
+
+```{r}
+# update park boundary object name to clarify that it's a polygon
+park_polygon <- boundary
+
+# create line version park boundary
+park_border <- boundary %>%
+  sf::st_cast(., "MULTILINESTRING") # '.' --> use the previous variable 
+
+
+# make a map to compare these datasets 
+map1 <- tm_shape(park_polygon) + 
+  tm_polygons() + 
+  tm_layout(main.title = "polygon")
+
+map2 <- tm_shape(park_border) + 
+  tm_lines() + 
+  tm_layout(main.title = "lines")
+
+tmap_arrange(map1, map2, nrow = 1)
+```
+
+## Rasterize
+
+```{r}
+# rasterize the park boundary layers
+polygon_raster <- terra::rasterize(park_polygon, # layer to rasterize
+                                   elevation) # template raster 
+border_raster <- terra::rasterize(park_border, 
+                                  elevation)
+                                   
+
+map3 <- tm_shape(polygon_raster) + 
+  tm_raster() + 
+  tm_layout(main.title = "polygon raster", 
+            legend.outside = TRUE)
+
+map4 <- tm_shape(border_raster) + 
+  tm_raster() + 
+  tm_layout(main.title = "border raster", 
+            legend.outside = TRUE)
+
+tmap_arrange(map3, map4, nrow = 1)
+```
+
+## Compare raster resolutions
+
+```{r}
+# create low spatial resolution template raster from scratch 
+template_raster_low <- terra::rast(ext(park_polygon), resolution = 0.05,
+                        crs = st_crs(park_polygon))
+
+# create high spatial resolution template raster from scratch 
+template_raster_high <- terra::rast(ext(park_polygon), resolution = 0.01,
+                        crs = st_crs(park_polygon))
+
+# rasterize to low resolution template raster
+polygon_raster_low <- terra::rasterize(park_polygon, 
+                                       template_raster_low)
+
+# rasterize to high resolution template raster
+polygon_raster_high <- terra::rasterize(park_polygon, 
+                                        template_raster_high)
+
+
+
+# plot 
+map1 <- tm_shape(polygon_raster_low) +
+  tm_raster() +
+  tm_layout(main.title = "low resolution")
+
+map2 <- tm_shape(polygon_raster_high) +
+  tm_raster() +
+  tm_layout(main.title = "high resolution")
+
+tmap_arrange(map1, map2, nrow = 1)
+```
+
+## Rasterizing point data 
+
+```{r}
+# define point data
+cycle_hire_osm <- spData::cycle_hire_osm
+
+# transform to projected CRS
+cycle_hire_osm_projected = sf::st_transform(cycle_hire_osm, "EPSG:27700")
+
+# define raster template
+template_raster <- terra::rast(ext(cycle_hire_osm_projected), resolution = 1000,
+                       crs = crs(cycle_hire_osm_projected))
+```
+
+In the following code chunk we’ll perform three versions of rasterization to produce the following:
+
+1. raster representing the presence/absence of cycle hire points
+2. raster representing the number of cycle hire points
+3. raster representing the total capacity of cycle hire points
+
+```{r}
+# presence/absence of cycle hire points 
+ch_raster1 <- terra::rasterize(cycle_hire_osm_projected, template_raster)
+
+# number of cycle hire points 
+ch_raster2 <- rasterize(cycle_hire_osm_projected, template_raster, 
+                       fun = "length")
+
+# total capacity of cycle hire points
+ch_raster3 <- rasterize(cycle_hire_osm_projected, template_raster, 
+                       field = "capacity", fun = sum, na.rm = TRUE)
+
+
+
+# plotting
+map1 <- tm_shape(cycle_hire_osm_projected) +
+  tm_symbols(col = "capacity") +
+  tm_layout(main.title = "original points")
+
+map2 <- tm_shape(ch_raster1) +
+  tm_raster(title = "presence") +
+  tm_layout(main.title = "presence/absence")
+
+map3 <- tm_shape(ch_raster2) +
+  tm_raster(title = "Hire points (n)") +
+  tm_layout(main.title = "count of points")
+
+map4 <- tm_shape(ch_raster3) +
+  tm_raster(title = "Capacity (n bikes)") +
+  tm_layout(main.title = "sum of capacity")
+
+tmap_arrange(map1, map2, map3, map4, nrow = 2)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
